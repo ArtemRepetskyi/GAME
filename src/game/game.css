@@ -124,3 +124,16 @@ body[data-reduced-motion="true"] #action-marker,body[data-reduced-motion="true"]
   .mission-actions { margin-top: 20px; }
   .mission-menu-links { margin-top: 14px; padding-top: 8px; }
 }
+.online-form { display: grid; gap: 12px; margin-top: 18px; font-size: 14px; }
+.online-form label { display: grid; gap: 6px; color: var(--ink-muted); }
+.online-form input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--ink-rule); border-radius: 3px; background: var(--paper); color: var(--ink); font: inherit; }
+.online-form input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.online-row { display: flex; gap: 10px; }
+.online-row .menu-secondary { width: auto; flex: 1 0 auto; }
+.online-row input { flex: 1 1 auto; text-transform: uppercase; letter-spacing: 0.08em; }
+#online-share { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border: 1px dashed var(--ink-rule); border-radius: 3px; }
+#online-share strong { font-size: 22px; letter-spacing: 0.12em; }
+#online-share .menu-quiet { width: auto; margin-left: auto; padding: 6px 10px; }
+#online-status { margin: 0; color: var(--ink-muted); overflow-wrap: anywhere; }
+#online-roster { margin: 0; padding-left: 18px; color: #1b7a37; }
+#online-roster:empty { display: none; }

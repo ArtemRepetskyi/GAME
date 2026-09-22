@@ -359,6 +359,8 @@ export class EnemyActor {
   }
 
   shoot() { this.kick = 0.11 }
+  /** Online teammates share the guard rig in a different ink. */
+  setColor(hex: number) { this.material.color.setHex(hex) }
 
   /** A non-lethal flinch interrupts locomotion for the clip's length; a lethal clip name is used by the next dead update. */
   react(clip: string, lethal: boolean, direction?: THREE.Vector3, travelScale = 1) {

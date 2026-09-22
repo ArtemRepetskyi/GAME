@@ -1,6 +1,6 @@
 import { missionObjective, type MissionState } from './mission'
 
-type MenuPage = 'home' | 'mission' | 'controls' | 'settings' | 'vr' | 'restart'
+type MenuPage = 'home' | 'online' | 'mission' | 'controls' | 'settings' | 'vr' | 'restart'
 type MenuCallbacks = { retry: () => void; restart: () => void }
 
 /** One decision at a time; reference material never blocks entering the game. */
@@ -36,10 +36,17 @@ export class MissionMenu {
           <button id="mission-restart" class="menu-quiet" hidden>Restart mission</button>
         </div>
         <nav class="mission-menu-links" aria-label="Mission menu">
+          <button data-menu-open="online">Online</button>
           <button data-menu-open="mission">Mission</button>
           <button data-menu-open="controls">Controls</button>
           <button data-menu-open="settings">Settings</button>
         </nav>
+      </section>
+      <section data-menu-page="online" hidden>
+        <button class="menu-back" data-menu-back><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button>
+        <h2 id="online-page-title">Play online</h2>
+        <p>Create a room and send the code to friends, or join theirs. Everyone plays the mission together and sees each other; guards killed by anyone fall for everyone.</p>
+        <div class="mission-online-slot"></div>
       </section>
       <section data-menu-page="mission" hidden>
         <button class="menu-back" data-menu-back><span aria-hidden="true">←</span> Back <kbd>Esc</kbd></button>

@@ -20,6 +20,7 @@ import { HostageEscort } from './hostages'
 import { SecuritySystem } from './security'
 import { RESCUE_LAYOUT } from './rescue-layout'
 import { updateRescueJeepDoor } from './rescue-jeep'
+import { OnlinePlay } from './online'
 import type { EnemySnapshot, MissionWorld, Shot, SoundEvent, Station, Vec3, WeaponSnapshot } from './types'
 
 type Checkpoint = { mission: MissionState; weapons: WeaponSnapshot; enemies: EnemySnapshot[]; doors: boolean[]; position: Vec3; quaternion: [number,number,number,number]; blood?: BloodSnapshot }
@@ -39,6 +40,7 @@ export class MissionRuntime {
   readonly hud: MissionHUD
   readonly escort: HostageEscort
   readonly security: SecuritySystem
+  readonly online: OnlinePlay
   ready = false
   readonly initialized: Promise<void>
   deaths = 0
@@ -83,6 +85,7 @@ export class MissionRuntime {
       onSurfaceHit: (point, direction, surface, weapon) => this.impacts.emit(point, direction, surface, weapon),
       dropWeapon: item => { this.weapons.addPickup(item); this.state.kills++ }, onHit: hit => {
         this.impactPoint = hit.point.clone(); this.blood.emitHit(hit); this.audio.confirmHit(hit)
+        if (hit.lethal && hit.targetId) this.online?.kill(hit.targetId, hit.direction)
       } })
     this.hud = new MissionHUD(world, {
       retry: () => { this.restart(); void this.audio.unlock(); this.player.requestControl() },
@@ -94,6 +97,17 @@ export class MissionRuntime {
     }
     this.escort = new HostageEscort(scene, player.world, player.actions.doors)
     this.security = new SecuritySystem(player.world, world, this.ai, event => this.emit(event, false))
+    this.online = new OnlinePlay(scene, invalidate, {
+      shot: (_from, origin, end, weapon, pellet) => {
+        this.bulletTrails.emit(origin, end, weapon)
+        if (weapon && !pellet) this.emit({ kind: `shot-${weapon}`, position: origin.clone(), radius: weapon === 'pistol' ? 38 : 55 }, false)
+      },
+      kill: (enemy, direction) => {
+        const item = this.ai.remoteKill(enemy, direction)
+        if (item) this.weapons.addPickup(item)
+      },
+      notify: text => this.hud.notify(text, 3),
+    })
     this.syncWorld()
     player.actions.extraTargets = () => this.targets()
     player.actions.onAction = target => {
@@ -279,6 +293,7 @@ export class MissionRuntime {
       this.impacts.emit(end, shot.direction, surface, shot.weapon)
     } : undefined
     this.bulletTrails.emit(shot.origin, end, shot.weapon, undefined, impact)
+    this.online?.shot(shot.origin, end, shot.weapon, Boolean(shot.pelletIndex))
   }
 
   damage(amount: number, source?: THREE.Vector3, hit?: PlayerBulletHit) {
@@ -524,9 +539,12 @@ export class MissionRuntime {
     this.hud.update(dt,this.state,{playing:this.player.playing,enabled:this.player.enabled&&!this.player.immersive,
       weapon:this.weapons.current,reloading:this.weapons.reloading,
       position:this.player.body.position,yaw:new THREE.Euler().setFromQuaternion(this.camera.perspective.quaternion,'YXZ').y,deaths:this.deaths,ready:this.ready})
-    return active || this.death.running
+    const teammates = this.online?.update(dt, OnlinePlay.stateOf(this.player.body.position,
+      new THREE.Euler().setFromQuaternion(this.camera.perspective.quaternion, 'YXZ').y,
+      this.weapons.current?.name ?? null, this.state.phase === 'dead'))
+    return active || this.death.running || Boolean(teammates)
   }
 
   finishFrame() { this.playerHits.removeCamera() }
-  dispose() { this.escape.reset(this.camera.perspective);this.escapeDust.dispose();this.playerHits.clear();this.disposed=true;this.abort.abort();this.bulletTrails.dispose();this.escort.dispose();this.weapons.dispose();this.ai.dispose();this.blood.dispose();this.impacts.dispose();this.audio.dispose();this.hud.dispose();this.player.movementLocked=false;this.player.onPlayingChange=()=>{};this.player.lookSensitivity=()=>1;this.player.actions.extraTargets=()=>[];this.player.actions.onAction=()=>{} }
+  dispose() { this.online?.dispose();this.escape.reset(this.camera.perspective);this.escapeDust.dispose();this.playerHits.clear();this.disposed=true;this.abort.abort();this.bulletTrails.dispose();this.escort.dispose();this.weapons.dispose();this.ai.dispose();this.blood.dispose();this.impacts.dispose();this.audio.dispose();this.hud.dispose();this.player.movementLocked=false;this.player.onPlayingChange=()=>{};this.player.lookSensitivity=()=>1;this.player.actions.extraTargets=()=>[];this.player.actions.onAction=()=>{} }
 }

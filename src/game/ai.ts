@@ -1142,6 +1142,23 @@ export class EnemyDirector {
     return true
   }
 
+  /** An online teammate killed this guard in their copy of the mission. Returns the weapon it drops. */
+  remoteKill(id: string, direction: THREE.Vector3) {
+    const enemy = this.enemies.find(candidate => candidate.spec.id === id)
+    if (!enemy || enemy.state === 'dead') return null
+    enemy.health = 0
+    enemy.actor.root.userData.alertScan = undefined
+    enemy.actor.react('dieBody', true, direction.clone().setY(0).normalize())
+    enemy.deathClip = enemy.actor.deathClip
+    this.enter(enemy, 'dead')
+    enemy.actor.update(0, 'dead', false)
+    this.context.emit({ kind: 'enemy-down', position: enemy.position.clone(), radius: 5 })
+    if (enemy.dropped) return null
+    enemy.dropped = true
+    return { id: `enemy-${enemy.spec.id}`, name: enemy.spec.weapon, magazine: enemy.magazine,
+      reserve: WEAPON[enemy.spec.weapon].magazine, position: tuple(enemy.position) }
+  }
+
   activateReserves(radioEnabled: boolean, destination: THREE.Vector3) {
     this.reserveDestination = destination.clone()
     let remaining = radioEnabled ? 4 : 2
