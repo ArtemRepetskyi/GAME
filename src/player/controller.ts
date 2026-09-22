@@ -51,6 +51,8 @@ export class FirstPersonController {
     canvas.addEventListener('pointerdown', event => {
       if (!this.enabled || this.immersive || event.button !== 0) return
       if (!this.playing) this.requestControl()
+      // Drag-to-look is only a stopgap: any click on the game asks for mouse capture again.
+      else if (this.fallback && document.pointerLockElement !== canvas) this.lockPointer()
       this.dragging = true
       if (this.fallback) canvas.setPointerCapture(event.pointerId)
     }, options)
@@ -58,7 +60,7 @@ export class FirstPersonController {
     window.addEventListener('pointercancel', () => { this.dragging = false }, options)
     document.addEventListener('mousemove', this.look, options)
     document.addEventListener('pointerlockchange', () => {
-      if (document.pointerLockElement === canvas && this.enabled) this.resume()
+      if (document.pointerLockElement === canvas && this.enabled) { this.fallback = false; this.resume() }
       else if (this.playing && !this.fallback) this.pause()
     }, options)
     document.addEventListener('pointerlockerror', this.useFallback, options)
@@ -105,7 +107,12 @@ export class FirstPersonController {
   requestControl() {
     if (!this.enabled || this.immersive || !this.canPlay()) return
     this.canvas.focus({ preventScroll: true })
-    if (!this.canvas.requestPointerLock || this.fallback) { this.useFallback(); return }
+    if (!this.canvas.requestPointerLock) { this.useFallback(); return }
+    // A refused lock (e.g. Chrome's ~1 s cooldown after Esc) must not disable mouse look for the whole session.
+    this.lockPointer()
+  }
+
+  private lockPointer() {
     try {
       const request = this.canvas.requestPointerLock() as Promise<void> | undefined
       request?.catch(this.useFallback)

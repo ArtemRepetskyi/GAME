@@ -21,6 +21,8 @@ import { SecuritySystem } from './security'
 import { RESCUE_LAYOUT } from './rescue-layout'
 import { updateRescueJeepDoor } from './rescue-jeep'
 import { OnlinePlay } from './online'
+import { AimZoom } from './aim-zoom'
+import { hitDamage, shotgunDamageMultiplier } from './balance'
 import type { EnemySnapshot, MissionWorld, Shot, SoundEvent, Station, Vec3, WeaponSnapshot } from './types'
 
 type Checkpoint = { mission: MissionState; weapons: WeaponSnapshot; enemies: EnemySnapshot[]; doors: boolean[]; position: Vec3; quaternion: [number,number,number,number]; blood?: BloodSnapshot }
@@ -41,6 +43,10 @@ export class MissionRuntime {
   readonly escort: HostageEscort
   readonly security: SecuritySystem
   readonly online: OnlinePlay
+  readonly zoom = new AimZoom()
+  /** Online duel: no guards, other players are the targets, dying respawns. */
+  versus = false
+  private zoomOnly = false
   ready = false
   readonly initialized: Promise<void>
   deaths = 0
@@ -79,7 +85,7 @@ export class MissionRuntime {
     this.impacts = new MissionImpacts(scene, player.world)
     this.bulletTrails = new BulletTrails(scene, 'Player bullet')
     this.escapeDust = new EscapeDust(scene)
-    player.lookSensitivity = () => this.weapons.lookSensitivity
+    player.lookSensitivity = () => this.weapons.lookSensitivity / (this.zoom?.factor ?? 1)
     this.ai = new EnemyDirector({ scene, world: player.world, doors: player.actions.doors, specs: world.enemies,
       emit: event => this.emit(event, false), damagePlayer: (amount, source, hit) => this.damage(amount, source, hit),
       onSurfaceHit: (point, direction, surface, weapon) => this.impacts.emit(point, direction, surface, weapon),
@@ -107,6 +113,12 @@ export class MissionRuntime {
         if (item) this.weapons.addPickup(item)
       },
       notify: text => this.hud.notify(text, 3),
+      mode: mode => this.setVersus(mode === 'versus'),
+      hurt: (damage, source) => {
+        if (!this.versus || this.state.phase !== 'active') return false
+        this.damage(damage, source)
+        return (this.state.phase as string) === 'dead'
+      },
     })
     this.syncWorld()
     player.actions.extraTargets = () => this.targets()
@@ -131,8 +143,9 @@ export class MissionRuntime {
       void this.audio.unlock()
       if (event.button === 0) this.weapons.trigger(true)
       if (event.button === 2) {
-        this.aiming = this.weapons.canAim && !this.aiming
-        if (this.weapons.current && !this.weapons.canAim) this.hud.notify("You can't aim with this weapon.", 2, true)
+        // Weapons without an aiming pose (pistol, shotgun) still get the light right-click zoom.
+        if (this.weapons.canAim) { this.aiming = !this.aiming; this.zoomOnly = false }
+        else if (this.weapons.current) { this.zoomOnly = !this.zoomOnly; this.aiming = false }
       }
       this.invalidate()
     }, options)
@@ -164,7 +177,7 @@ export class MissionRuntime {
       this.placeAtInsertion()
       this.initial = this.snapshot()
       this.checkpoint = structuredClone(this.initial)
-      this.ready = true; this.hud.ready(); this.invalidate()
+      this.ready = true; this.hud.ready(); this.prepareVersus(); this.invalidate()
     } catch (error) {
       if (this.disposed) return
       console.error('Mission loading failed', error)
@@ -184,7 +197,7 @@ export class MissionRuntime {
   }
 
   private isActive() { return this.ready && this.state.phase === 'active' && !this.escape.active && this.player.enabled && this.player.playing && !this.player.immersive }
-  private cancelInput() { this.aiming = false; this.weapons.cancel() }
+  private cancelInput() { this.aiming = false; this.zoomOnly = false; this.weapons.cancel() }
   private keyDown = (event: KeyboardEvent) => {
     if (this.escape.active) return
     const zoomKey = event.code === 'KeyQ' || event.code === 'KeyE'
@@ -285,7 +298,15 @@ export class MissionRuntime {
     const distance = surface?.distance ?? shot.range
     this.ai.nearMiss(shot,distance)
     this.impactPoint = null
-    const hit=this.ai.hit(shot,distance)
+    let hit=this.ai.hit(shot,distance)
+    if (!hit && this.versus) {
+      const player = this.online.hitPlayer(shot.origin, shot.direction, distance, (zone, travelled) =>
+        hitDamage(shot.weapon, zone, shot.damage) * (shot.weapon === 'shotgun' ? shotgunDamageMultiplier(travelled) : 1))
+      if (player) {
+        hit = true; this.impactPoint = player.point
+        this.emit({ kind: 'enemy-hit', position: player.point.clone(), radius: 14, zone: player.zone }, false)
+      }
+    }
     if (hit) this.hitFlash = 0.15
     const end=this.impactPoint ?? shot.origin.clone().addScaledVector(shot.direction,distance)
     const impact = !hit && surface ? () => {
@@ -338,6 +359,7 @@ export class MissionRuntime {
     this.player.movementLocked = false; this.gunfireUntil = 0
     this.player.actions.doors.forEach((door,i)=>setDoorOpen(door,saved.doors[i]??false,true))
     this.player.world.refresh(); this.ai.restore(structuredClone(saved.enemies)); this.weapons.restore(structuredClone(saved.weapons)); this.blood.restore(saved.blood)
+    this.zoom?.reset(this.camera.perspective)
     this.player.body.teleport(new THREE.Vector3(...saved.position)); this.player.actions.syncCamera(this.camera.perspective)
     this.camera.perspective.quaternion.fromArray(saved.quaternion)
     this.safePosition.copy(this.player.body.position); this.safeQuaternion.copy(this.camera.perspective.quaternion)
@@ -345,11 +367,45 @@ export class MissionRuntime {
     this.bulletTrails.clear(); this.impacts.clear(); this.hud.reset(); this.security.reset(); this.syncWorld(true); this.invalidate()
   }
 
-  retry() { if(this.checkpoint) { this.restore(this.checkpoint); this.hud.notify('Mission reset.',3) } }
+  retry() { if(this.checkpoint) { this.restore(this.checkpoint); this.hud.notify('Mission reset.',3); this.prepareVersus() } }
   restart() {
     if(!this.initial) return
     this.checkpoint=structuredClone(this.initial); this.deaths=0; this.restore(this.initial)
     this.hud.notify('Mission restarted.',3)
+    this.prepareVersus()
+  }
+
+  private setVersus(on: boolean) {
+    if (on === this.versus || !this.ready) { this.versus = on; if (on && this.ready) this.prepareVersus(); return }
+    this.versus = on
+    // Entering a duel clears the guards; leaving one brings the normal mission back.
+    if (on) this.prepareVersus()
+    else this.restart()
+  }
+
+  /** Duel respawn: no guards, full health, placed at a guard post as far as possible from the others. */
+  private prepareVersus() {
+    if (!this.versus || !this.ready) return
+    for (const item of this.ai.removeAll()) this.weapons.addPickup(item)
+    // Nobody is left to answer an alarm; keep sirens and cameras out of the duel.
+    this.state.alarm = 'inactive'; this.state.camerasActive = false
+    this.security.sync(this.state)
+    const others = this.online.remote.positions()
+    const posts = this.world.enemies.filter(spec => !spec.reserve && spec.role !== 'sniper').map(spec => new THREE.Vector3(...spec.position))
+    posts.push(new THREE.Vector3(...this.world.spawn))
+    let best = posts[Math.floor(Math.random() * posts.length)], bestScore = -Infinity
+    if (others.length) for (const post of posts) {
+      const score = Math.min(...others.map(other => other.distanceTo(post))) + Math.random() * 8
+      if (score > bestScore) { bestScore = score; best = post }
+    }
+    const floor = this.player.world.floor(best.clone().setY(best.y + 1), 0.1, 3)
+    if (Number.isFinite(floor)) best.y = floor + 0.005
+    this.player.body.teleport(best)
+    this.player.world.refresh()
+    this.player.actions.syncCamera(this.camera.perspective)
+    this.safePosition.copy(this.player.body.position)
+    this.hud.notify('Duel: find and shoot the orange player. Guns lie where the guards stood.', 5)
+    this.invalidate()
   }
 
   private syncWorld(resetEscort = false) {
@@ -376,7 +432,7 @@ export class MissionRuntime {
   }
 
   private beginEscape() {
-    this.cancelInput(); this.playerHits.clear()
+    this.cancelInput(); this.playerHits.clear(); this.zoom?.reset(this.camera.perspective)
     this.player.actions.reset(); this.player.movementLocked = true
     this.player.body.velocity.set(0, 0, 0)
     this.weapons.update(0, { active: false, climbing: false, moving: 0, aiming: false,
@@ -515,6 +571,9 @@ export class MissionRuntime {
       const zoom = this.aiming && this.weapons.current?.name === 'sniper' && !this.weapons.reloading ? this.weapons.scopeMagnification : 1
       this.playerHits.applyCamera(this.camera.perspective, this.player.world, 1 / zoom)
     }
+    // Light right-click zoom. The sniper scope owns the FOV while it is up, so hand it back first.
+    if (this.aiming && this.weapons.current?.name === 'sniper') this.zoom?.reset(this.camera.perspective)
+    else this.zoom?.update(this.camera.perspective, reactionActive && (this.aiming || this.zoomOnly) && !this.weapons.reloading, dt, this.hud.reducedMotion)
     // A lethal AI hit can start the sequence inside this very update.
     deathVisible = this.death.active && this.player.enabled && !this.player.immersive
     if (deathVisible) {

@@ -7,12 +7,16 @@ import type { Vec3, WeaponName } from './types'
  * Star topology: the room creator is the host and relays every guest message to the other guests.
  */
 export type PlayerState = { p: Vec3; yaw: number; weapon: WeaponName | null; dead: boolean }
+/** coop: everyone against the guards. versus: a duel, guards removed, players damage each other. */
+export type GameMode = 'coop' | 'versus'
 export type NetMessage =
   | { t: 'hello'; name: string }
-  | { t: 'roster'; players: { id: string; name: string }[] }
+  | { t: 'roster'; players: { id: string; name: string }[]; mode?: GameMode }
   | { t: 'state'; s: PlayerState }
   | { t: 'shot'; o: Vec3; e: Vec3; weapon?: WeaponName; pellet?: boolean }
   | { t: 'kill'; enemy: string; d: Vec3 }
+  | { t: 'hit'; target: string; damage: number; o: Vec3 }
+  | { t: 'frag'; killer: string }
   | { t: 'leave' }
 /** Every relayed message carries its original sender. */
 type Envelope = NetMessage & { from: string }
@@ -21,7 +25,7 @@ export type NetworkEvents = {
   message: (from: string, message: NetMessage) => void
   leave: (id: string) => void
   status: (text: string) => void
-  roster: (players: { id: string; name: string }[]) => void
+  roster: (players: { id: string; name: string }[], mode: GameMode) => void
 }
 
 const PREFIX = 'operation-ink-room-'
@@ -48,6 +52,7 @@ export class NetworkSession {
   code = ''
   host = false
   id = ''
+  mode: GameMode = 'coop'
   private peer: Peer | null = null
   private links = new Map<string, DataConnection>()
   private names = new Map<string, string>()
@@ -57,13 +62,14 @@ export class NetworkSession {
   get connected() { return this.links.size > 0 }
   get players() { return [...this.names].map(([id, name]) => ({ id, name })) }
 
-  async create(code = roomCode()) {
+  async create(mode: GameMode, code = roomCode()) {
     this.host = true
+    this.mode = mode
     this.code = code
     const peer = await this.open(PREFIX + code)
     this.names.set(this.id, this.name)
     this.events.status(`Room ${code} is open. Share the code or link with friends.`)
-    this.events.roster(this.players)
+    this.events.roster(this.players, this.mode)
     peer.on('connection', link => {
       link.on('open', () => { this.links.set(link.peer, link) })
       link.on('data', data => this.receive(link.peer, data as NetMessage))
@@ -75,10 +81,12 @@ export class NetworkSession {
   async join(code: string) {
     this.host = false
     this.code = code
+    this.events.status('Contacting the matchmaking server…')
     const peer = await this.open()
+    this.events.status(`Connecting to room ${code}…`)
     const link = peer.connect(PREFIX + code, { reliable: true })
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Room ${code} did not answer.`)), 12000)
+      const timer = setTimeout(() => reject(new Error(`Room ${code} did not answer. Check the code, or try another network.`)), 20000)
       link.on('open', () => { clearTimeout(timer); resolve() })
       link.on('error', error => { clearTimeout(timer); reject(error) })
       peer.on('error', error => { clearTimeout(timer); reject(error.type === 'peer-unavailable' ? new Error(`Room ${code} was not found.`) : error) })
@@ -128,8 +136,9 @@ export class NetworkSession {
     const message = data as Envelope
     if (message.t === 'roster') {
       this.names = new Map(message.players.map(player => [player.id, player.name]))
+      if (message.mode === 'coop' || message.mode === 'versus') this.mode = message.mode
       for (const id of [...this.known]) if (!this.names.has(id)) { this.known.delete(id); this.events.leave(id) }
-      this.events.roster(this.players)
+      this.events.roster(this.players, this.mode)
       return
     }
     if (message.t === 'leave') { this.events.leave(message.from); return }
@@ -138,9 +147,9 @@ export class NetworkSession {
   private known = new Set<string>()
 
   private broadcastRoster() {
-    const roster: Envelope = { t: 'roster', players: this.players, from: this.id }
+    const roster: Envelope = { t: 'roster', players: this.players, mode: this.mode, from: this.id }
     for (const link of this.links.values()) if (link.open) link.send(roster)
-    this.events.roster(this.players)
+    this.events.roster(this.players, this.mode)
   }
 
   private drop(peer: string) {
@@ -161,7 +170,7 @@ export class NetworkSession {
     this.known.clear()
     this.links.clear()
     this.names.clear()
-    this.events.roster([])
+    this.events.roster([], 'coop')
   }
 
   close() {

@@ -1142,6 +1142,21 @@ export class EnemyDirector {
     return true
   }
 
+  /** Online duel: take every guard out of play and leave their guns where they stood. */
+  removeAll() {
+    const items = []
+    for (const enemy of this.enemies) {
+      enemy.health = 0
+      this.enter(enemy, 'dead')
+      enemy.actor.root.visible = false
+      if (enemy.state === 'reserve' || enemy.spec.reserve) continue
+      items.push({ id: `enemy-${enemy.spec.id}`, name: enemy.spec.weapon, magazine: WEAPON[enemy.spec.weapon].magazine,
+        reserve: WEAPON[enemy.spec.weapon].magazine * 2, position: tuple(enemy.position) })
+    }
+    this.clearTraces()
+    return items
+  }
+
   /** An online teammate killed this guard in their copy of the mission. Returns the weapon it drops. */
   remoteKill(id: string, direction: THREE.Vector3) {
     const enemy = this.enemies.find(candidate => candidate.spec.id === id)
@@ -1232,6 +1247,7 @@ export class EnemyDirector {
       const enemy = this.enemies.find(candidate => candidate.spec.id === saved.id)
       if (!enemy) continue
       enemy.position.fromArray(saved.position)
+      enemy.actor.root.visible = true
       enemy.yaw = saved.yaw; enemy.health = saved.health; enemy.state = saved.state
       enemy.suspicion = saved.suspicion; enemy.lastKnown = vector(saved.lastKnown)
       enemy.timer = saved.timer; enemy.waypoint = saved.waypoint

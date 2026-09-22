@@ -137,3 +137,7 @@ body[data-reduced-motion="true"] #action-marker,body[data-reduced-motion="true"]
 #online-status { margin: 0; color: var(--ink-muted); overflow-wrap: anywhere; }
 #online-roster { margin: 0; padding-left: 18px; color: #1b7a37; }
 #online-roster:empty { display: none; }
+.online-mode { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--ink-rule); border-radius: 3px; }
+.online-mode legend { padding: 0 4px; color: var(--ink-muted); font-size: 12px; }
+.online-mode label { display: flex; align-items: center; gap: 8px; color: var(--ink); cursor: pointer; }
+#online-mode-note { margin: 0; color: #b04a00; }

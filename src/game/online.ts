@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { NetworkSession, normalizeCode, type NetMessage, type PlayerState } from './network'
+import { NetworkSession, normalizeCode, type GameMode, type NetMessage, type PlayerState } from './network'
 import { RemotePlayers } from './remote-players'
 import type { Vec3, WeaponName } from './types'
 
@@ -8,6 +8,10 @@ type OnlineHooks = {
   shot: (from: string, origin: THREE.Vector3, end: THREE.Vector3, weapon?: WeaponName, pellet?: boolean) => void
   kill: (enemy: string, direction: THREE.Vector3) => void
   notify: (text: string) => void
+  /** Room mode changed (joined, created, or left: back to 'coop' single player). */
+  mode: (mode: GameMode) => void
+  /** Another player shot us in a duel. Returns true when that hit was lethal. */
+  hurt: (damage: number, source: THREE.Vector3) => boolean
 }
 
 const SEND_INTERVAL = 1 / 15
@@ -29,6 +33,11 @@ export class OnlinePlay {
   private createButton: HTMLButtonElement
   private joinButton: HTMLButtonElement
   private leaveButton: HTMLButtonElement
+  private modeInputs: HTMLInputElement[]
+  private modeNote: HTMLElement
+  mode: GameMode = 'coop'
+  private frags = new Map<string, number>()
+  private lastRoster: { id: string; name: string }[] = []
 
   constructor(scene: THREE.Scene, private invalidate: () => void, private hooks: OnlineHooks) {
     this.remote = new RemotePlayers(scene, invalidate)
@@ -38,6 +47,11 @@ export class OnlinePlay {
     this.root.innerHTML = `
       <div class="online-form">
         <label>Your name <input id="online-name" maxlength="20" autocomplete="nickname" placeholder="Player" /></label>
+        <fieldset class="online-mode">
+          <legend>Mode (chosen by whoever creates the room)</legend>
+          <label><input type="radio" name="online-mode" value="coop" checked /> Together vs guards</label>
+          <label><input type="radio" name="online-mode" value="versus" /> 1 vs 1 duel (no guards)</label>
+        </fieldset>
         <div class="online-row">
           <button id="online-create" class="menu-secondary">Create room</button>
         </div>
@@ -46,6 +60,7 @@ export class OnlinePlay {
           <button id="online-join" class="menu-secondary">Join</button>
         </div>
         <div id="online-share" hidden></div>
+        <p id="online-mode-note" hidden></p>
         <p id="online-status" role="status">Not connected.</p>
         <ul id="online-roster" aria-label="Players in the room"></ul>
         <button id="online-leave" class="menu-quiet" hidden>Leave room</button>
@@ -54,6 +69,8 @@ export class OnlinePlay {
     this.status = q('#online-status'); this.roster = q('#online-roster'); this.share = q('#online-share')
     this.nameInput = q('#online-name'); this.codeInput = q('#online-code')
     this.createButton = q('#online-create'); this.joinButton = q('#online-join'); this.leaveButton = q('#online-leave')
+    this.modeInputs = [...this.root.querySelectorAll<HTMLInputElement>('input[name="online-mode"]')]
+    this.modeNote = q('#online-mode-note')
     this.nameInput.value = storedName
     this.codeInput.value = normalizeCode(params.get('room') ?? '')
     const options = { signal: this.abort.signal }
@@ -62,7 +79,11 @@ export class OnlinePlay {
     this.codeInput.addEventListener('keydown', event => { if (event.key === 'Enter') this.joinButton.click() }, options)
     this.leaveButton.addEventListener('click', () => this.leave(), options)
     window.addEventListener('pagehide', () => this.session?.close(), options)
-    if (this.codeInput.value) this.status.textContent = `Invitation to room ${this.codeInput.value}: enter your name and press Join.`
+    if (this.codeInput.value) {
+      this.status.textContent = `Invitation to room ${this.codeInput.value}: enter your name and press Join.`
+      // Fetch the networking code while the player reads the menu.
+      void import('peerjs').catch(() => {})
+    }
   }
 
   get connected() { return Boolean(this.session?.connected) }
@@ -75,6 +96,7 @@ export class OnlinePlay {
 
   private setBusy(busy: boolean) {
     this.createButton.disabled = this.joinButton.disabled = busy || Boolean(this.session)
+    for (const input of this.modeInputs) input.disabled = Boolean(this.session)
     this.leaveButton.hidden = !this.session
   }
 
@@ -85,14 +107,14 @@ export class OnlinePlay {
       message: (from, message) => this.receive(from, message),
       leave: id => this.remote.remove(id),
       status: text => { this.status.textContent = text; this.hooks.notify(text) },
-      roster: players => { this.showRoster(players); this.invalidate() },
+      roster: (players, mode) => { this.lastRoster = players; this.setMode(mode); this.showRoster(players); this.invalidate() },
     }, this.playerName())
     this.session = session
     this.setBusy(true)
     this.status.textContent = code ? `Connecting to room ${code}…` : 'Opening a room…'
     try {
       if (code) await session.join(code)
-      else await session.create()
+      else await session.create(this.modeInputs.find(input => input.checked)?.value === 'versus' ? 'versus' : 'coop')
       if (this.session !== session) return
       const link = new URL(location.href)
       const broker = link.searchParams.get('peer')
@@ -121,14 +143,27 @@ export class OnlinePlay {
     this.remote.clear()
     this.share.hidden = true
     this.status.textContent = 'Not connected.'
+    this.frags.clear()
     this.showRoster([])
+    this.setMode('coop')
     this.setBusy(false)
+  }
+
+  private setMode(mode: GameMode) {
+    if (mode === this.mode) return
+    this.mode = mode
+    this.remote.hostile = mode === 'versus'
+    for (const input of this.modeInputs) input.checked = input.value === mode
+    this.modeNote.hidden = mode !== 'versus'
+    this.modeNote.textContent = 'Duel: guards are gone, their guns lie where they stood. Shoot the orange player. After dying press Try again to respawn.'
+    this.hooks.mode(mode)
   }
 
   private showRoster(players: { id: string; name: string }[]) {
     this.roster.replaceChildren(...players.map(player => {
       const item = document.createElement('li')
-      item.textContent = player.id === this.session?.id ? `${player.name} (you)` : player.name
+      const you = player.id === this.session?.id ? ' (you)' : ''
+      item.textContent = this.mode === 'versus' ? `${player.name}${you} — ${this.frags.get(player.id) ?? 0} kills` : `${player.name}${you}`
       return item
     }))
   }
@@ -145,6 +180,16 @@ export class OnlinePlay {
         break
       }
       case 'kill': this.hooks.kill(String(message.enemy), new THREE.Vector3(...message.d)); break
+      case 'hit': {
+        if (this.mode !== 'versus' || message.target !== session.id) break
+        const damage = Math.min(200, Math.max(0, Number(message.damage) || 0))
+        if (this.hooks.hurt(damage, new THREE.Vector3(...message.o))) {
+          session.send({ t: 'frag', killer: from })
+          this.scored(from, session.id)
+        }
+        break
+      }
+      case 'frag': this.scored(String(message.killer), from); break
     }
   }
 
@@ -167,6 +212,24 @@ export class OnlinePlay {
 
   shot(origin: THREE.Vector3, end: THREE.Vector3, weapon?: WeaponName, pellet = false) {
     this.session?.send({ t: 'shot', o: tuple(origin), e: tuple(end), weapon, ...(pellet ? { pellet } : {}) })
+  }
+
+  private scored(killer: string, victim: string) {
+    const session = this.session
+    if (!session) return
+    this.frags.set(killer, (this.frags.get(killer) ?? 0) + 1)
+    const name = (id: string) => id === session.id ? 'You' : session.nameOf(id)
+    this.hooks.notify(`${name(killer)} killed ${victim === session.id ? 'you' : session.nameOf(victim)}.`)
+    this.showRoster(this.lastRoster)
+  }
+
+  /** Duel only: did our bullet segment hit another player? Sends the damage to them. */
+  hitPlayer(origin: THREE.Vector3, direction: THREE.Vector3, maxDistance: number, damage: (zone: import('./hit-reactions').HitZone, distance: number) => number) {
+    if (this.mode !== 'versus' || !this.session) return null
+    const hit = this.remote.hitTest(origin, direction, maxDistance)
+    if (!hit) return null
+    this.session.send({ t: 'hit', target: hit.id, damage: +damage(hit.zone, hit.distance).toFixed(1), o: tuple(origin) })
+    return hit
   }
 
   kill(enemy: string, direction: THREE.Vector3) {

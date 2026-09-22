@@ -3,8 +3,9 @@ import { EnemyActor } from './actors'
 import type { PlayerState } from './network'
 import type { WeaponName } from './types'
 
-/** Teammates are green so they never read as black guards or the blue hostage. */
+/** Teammates are green and duel opponents orange, so neither reads as a black guard or the blue hostage. */
 const TEAMMATE = 0x23a047
+const OPPONENT = 0xe0600a
 
 type Remote = {
   actor: EnemyActor | null
@@ -28,7 +29,7 @@ function nameSprite(name: string) {
   context.textAlign = 'center'; context.textBaseline = 'middle'
   context.lineWidth = 6; context.strokeStyle = '#ffffff'
   context.strokeText(name, 128, 32)
-  context.fillStyle = '#1b7a37'
+  context.fillStyle = '#333333'
   context.fillText(name, 128, 32)
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
@@ -43,6 +44,7 @@ function nameSprite(name: string) {
 export class RemotePlayers {
   private players = new Map<string, Remote>()
   private disposed = false
+  hostile = false
 
   constructor(private scene: THREE.Scene, private invalidate: () => void) {}
 
@@ -77,8 +79,8 @@ export class RemotePlayers {
     remote.loading = false
     if (this.disposed || this.players.get(id) !== remote) { actor.dispose(); return }
     if (remote.actor) { remote.actor.root.removeFromParent(); remote.actor.dispose() }
-    actor.setColor(TEAMMATE)
-    actor.root.name = 'Online teammate'
+    actor.setColor(this.hostile ? OPPONENT : TEAMMATE)
+    actor.root.name = 'Online player'
     actor.root.position.copy(remote.position)
     actor.root.rotation.y = remote.yaw
     this.scene.add(actor.root)
@@ -91,6 +93,26 @@ export class RemotePlayers {
   muzzle(id: string) { return this.players.get(id)?.actor?.muzzle() ?? null }
 
   shoot(id: string) { this.players.get(id)?.actor?.shoot() }
+
+  /** Nearest living teammate hit by a bullet segment, using the same animated volumes as the guards. */
+  hitTest(origin: THREE.Vector3, direction: THREE.Vector3, maxDistance: number) {
+    const normalized = direction.clone().normalize()
+    let best: { id: string; distance: number; point: THREE.Vector3; zone: import('./hit-reactions').HitZone } | null = null
+    for (const [id, remote] of this.players) {
+      if (remote.dead || !remote.actor) continue
+      // Broad phase: skip anyone the ray passes far away from.
+      const center = remote.position.clone().add(new THREE.Vector3(0, 0.9, 0))
+      const along = center.clone().sub(origin).dot(normalized)
+      if (along < 0 || along > maxDistance + 2 || origin.clone().addScaledVector(normalized, along).distanceTo(center) > 2) continue
+      remote.actor.root.updateMatrixWorld(true)
+      const hit = remote.actor.hitVolumes.raycast(origin, normalized, best?.distance ?? maxDistance)
+      if (hit && (!best || hit.distance < best.distance)) best = { id, distance: hit.distance, point: hit.point, zone: hit.zone }
+    }
+    return best
+  }
+
+  position(id: string) { return this.players.get(id)?.position.clone() ?? null }
+  positions() { return [...this.players.values()].map(remote => remote.position.clone()) }
 
   remove(id: string) {
     const remote = this.players.get(id)
@@ -121,6 +143,7 @@ export class RemotePlayers {
       const walking = remote.speed > 0.35 && !remote.dead
       remote.label.position.copy(remote.position).add(new THREE.Vector3(0, remote.dead ? 0.6 : 2.15, 0))
       if (remote.actor) {
+        remote.actor.setColor(this.hostile ? OPPONENT : TEAMMATE)
         remote.actor.root.position.copy(remote.position)
         // The rig faces +Z at zero yaw, the first-person camera looks down -Z.
         remote.actor.root.rotation.y = remote.yaw + Math.PI

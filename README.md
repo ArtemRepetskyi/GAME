@@ -16,10 +16,12 @@ Open the local Vite URL and select **Begin mission**. Controls are in the game m
 
 ## Online co-op
 
-Open the menu → **Online** → **Create room**, then send friends the room code or the invite link (**Copy invite link**). They open the link (or enter the code) and press **Join**.
+Open the menu → **Online**, pick a mode, **Create room**, then send friends the room code or the invite link (**Copy invite link**). They open the link (or enter the code) and press **Join**.
 
 - Networking is peer-to-peer WebRTC via [PeerJS](https://peerjs.com). The site stays static (it runs on GitHub Pages); the free public PeerJS server is only used so players can find each other. The room creator is the host and relays everything, so keep the host tab open.
-- Teammates appear as green stickmen with their names; you see and hear their shots. A guard killed by anyone dies for everyone. There is no friendly fire.
+- **Together vs guards** (co-op): teammates appear as green stickmen with their names; you see and hear their shots. A guard killed by anyone dies for everyone. There is no friendly fire.
+- **1 vs 1 duel**: guards are removed and their guns lie where they stood; the opponent is orange and bullets hurt. Each death scores a kill for the shooter (shown in the room list); press **Try again** to respawn at a post far from the others.
+- Right-click aiming zooms the view slightly (1.35×) with every weapon; the sniper keeps its scope.
 - Each player still runs their own copy of the mission: guard movement, the hostage, doors, alarms and mission progress are **not** synchronised.
 - Some strict networks (symmetric NAT, corporate firewalls) block direct WebRTC connections; without a TURN server those players cannot connect.
 - To use your own PeerJS server instead of the public one, add `?peer=https://your-host:port` to the page URL (run one with `npx peerjs --port 9000`).
