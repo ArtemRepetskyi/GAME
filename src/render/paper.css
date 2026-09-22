@@ -1,0 +1,29 @@
+:root {
+  color-scheme: light;
+  --paper: #ffffff;
+  --paper-shade: #f5f5f5;
+  --ink: #000000;
+  --ink-deep: #000000;
+  --ink-muted: #555555;
+  --ink-light: #808080;
+  --ink-rule: #80808080;
+  --hand: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive;
+  --notes: "Trebuchet MS", "Segoe UI", sans-serif;
+  background: var(--paper);
+  color: var(--ink-deep);
+}
+
+/* A fixed, faint paper fibre texture. It never moves or obscures input. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  background: url('/textures/paper-grain.svg') repeat;
+  opacity: 0.035;
+  mix-blend-mode: multiply;
+}
+body[data-vr="active"]::after { display: none; }
+::selection { color: var(--paper); background: var(--ink); }
+input, select { accent-color: var(--ink); }

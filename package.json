@@ -1,0 +1,46 @@
+{
+  "name": "project-stickman",
+  "private": true,
+  "license": "MIT",
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:vr": "vite --host 0.0.0.0 --port 5173 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "test": "fail=0; for f in scripts/*-checks.ts; do node scripts/check-player.mjs $f > /dev/null 2>&1 && echo \"ok   $f\" || { echo \"FAIL $f\"; fail=1; }; done; exit $fail",
+    "test:player": "node scripts/check-player.mjs",
+    "test:fall-damage": "node scripts/check-player.mjs scripts/fall-damage-checks.ts && node scripts/check-player.mjs scripts/player-death-runtime-checks.ts",
+    "test:gait": "node scripts/check-player.mjs scripts/gait-checks.ts",
+    "test:npc-transitions": "node scripts/check-player.mjs scripts/npc-transition-checks.ts",
+    "test:escape": "node scripts/check-player.mjs scripts/escape-cinematic-checks.ts",
+    "test:vr": "node scripts/check-player.mjs scripts/vr-checks.ts",
+    "test:mission": "node scripts/check-player.mjs scripts/mission-checks.ts",
+    "test:rescue": "npm run test:mission && node scripts/check-player.mjs scripts/rescue-map-checks.ts && node scripts/check-player.mjs scripts/hostage-checks.ts && node scripts/check-player.mjs scripts/security-checks.ts && node scripts/check-player.mjs scripts/transport-collision-checks.ts",
+    "test:weapons": "node scripts/check-player.mjs scripts/weapon-checks.ts && node scripts/check-player.mjs scripts/starting-loadout-checks.ts && node scripts/check-player.mjs scripts/shotgun-ballistics-checks.ts",
+    "test:ai": "node scripts/check-player.mjs scripts/ai-checks.ts && node scripts/check-player.mjs scripts/tactical-ai-checks.ts && node scripts/check-player.mjs scripts/responsive-ai-checks.ts && node scripts/check-player.mjs scripts/fair-awareness-checks.ts && node scripts/check-player.mjs scripts/door-navigation-checks.ts && node scripts/check-player.mjs scripts/ai-reposition-checks.ts",
+    "test:tower-patrol": "node scripts/check-player.mjs scripts/tower-patrol-checks.ts",
+    "test:map": "node scripts/check-player.mjs scripts/map-checks.ts",
+    "test:trees": "node scripts/check-player.mjs scripts/tree-checks.ts",
+    "test:expansion": "node scripts/check-player.mjs scripts/fence-checks.ts && node scripts/check-player.mjs scripts/indoor-enemy-checks.ts && node scripts/check-player.mjs scripts/zipline-checks.ts && node scripts/check-player.mjs scripts/near-miss-checks.ts && node scripts/check-player.mjs scripts/blood-feedback-checks.ts && node scripts/check-player.mjs scripts/blood-performance-checks.ts && node scripts/check-player.mjs scripts/hit-audio-checks.ts && node scripts/check-player.mjs scripts/enemy-motion-checks.ts",
+    "test:polish": "node scripts/check-player.mjs scripts/polish-weapon-checks.ts && node scripts/check-player.mjs scripts/polish-ai-checks.ts && node scripts/check-player.mjs scripts/polish-audio-checks.ts && node scripts/check-player.mjs scripts/polish-effects-checks.ts",
+    "preview": "vite preview",
+    "test:traversal-audio": "node scripts/check-player.mjs scripts/ladder-camera-checks.ts && node scripts/check-player.mjs scripts/polish-audio-checks.ts && node scripts/check-player.mjs scripts/hit-audio-checks.ts",
+    "test:combat-animations": "node scripts/check-player.mjs scripts/actor-combat-checks.ts && node scripts/check-player.mjs scripts/ai-combat-posture-checks.ts && node scripts/check-player.mjs scripts/shotgun-feedback-checks.ts && npm run test:deaths",
+    "test:deaths": "node scripts/check-player.mjs scripts/death-settle-checks.ts",
+    "test:player-hits": "node scripts/check-player.mjs scripts/player-hit-checks.ts",
+    "test:player-death": "node scripts/check-player.mjs scripts/player-death-checks.ts && node scripts/check-player.mjs scripts/player-death-runtime-checks.ts",
+    "test:bullets": "node scripts/check-player.mjs scripts/bullet-feedback-checks.ts && node scripts/check-player.mjs scripts/ink-impact-checks.ts && node scripts/check-player.mjs scripts/gun-distance-checks.ts && node scripts/check-player.mjs scripts/hit-audio-checks.ts"
+  },
+  "dependencies": {
+    "peerjs": "^1.5.5",
+    "preact": "^10.29.8",
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  }
+}
