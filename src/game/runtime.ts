@@ -141,6 +141,7 @@ export class MissionRuntime {
     window.addEventListener('mousedown', event => {
       if (!this.isActive() || event.target !== document.querySelector('#world')) return
       void this.audio.unlock()
+      if (this.player.takeSwallowedClick()) return
       if (event.button === 0) this.weapons.trigger(true)
       if (event.button === 2) {
         // Weapons without an aiming pose (pistol, shotgun) still get the light right-click zoom.

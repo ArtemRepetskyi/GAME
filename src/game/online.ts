@@ -48,7 +48,7 @@ export class OnlinePlay {
       <div class="online-form">
         <label>Your name <input id="online-name" maxlength="20" autocomplete="nickname" placeholder="Player" /></label>
         <fieldset class="online-mode">
-          <legend>Mode (chosen by whoever creates the room)</legend>
+          <legend>Mode (the room creator can change it at any time)</legend>
           <label><input type="radio" name="online-mode" value="coop" checked /> Together vs guards</label>
           <label><input type="radio" name="online-mode" value="versus" /> 1 vs 1 duel (no guards)</label>
         </fieldset>
@@ -78,6 +78,9 @@ export class OnlinePlay {
     this.joinButton.addEventListener('click', () => void this.start(normalizeCode(this.codeInput.value)), options)
     this.codeInput.addEventListener('keydown', event => { if (event.key === 'Enter') this.joinButton.click() }, options)
     this.leaveButton.addEventListener('click', () => this.leave(), options)
+    for (const input of this.modeInputs) input.addEventListener('change', () => {
+      if (input.checked && this.session?.host) this.session.setMode(input.value === 'versus' ? 'versus' : 'coop')
+    }, options)
     window.addEventListener('pagehide', () => this.session?.close(), options)
     if (this.codeInput.value) {
       this.status.textContent = `Invitation to room ${this.codeInput.value}: enter your name and press Join.`
@@ -96,7 +99,8 @@ export class OnlinePlay {
 
   private setBusy(busy: boolean) {
     this.createButton.disabled = this.joinButton.disabled = busy || Boolean(this.session)
-    for (const input of this.modeInputs) input.disabled = Boolean(this.session)
+    // Only the host decides the mode once a room exists.
+    for (const input of this.modeInputs) input.disabled = Boolean(this.session) && !this.session?.host
     this.leaveButton.hidden = !this.session
   }
 
@@ -157,6 +161,7 @@ export class OnlinePlay {
     this.modeNote.hidden = mode !== 'versus'
     this.modeNote.textContent = 'Duel: guards are gone, their guns lie where they stood. Shoot the orange player. After dying press Try again to respawn.'
     this.hooks.mode(mode)
+    if (this.session) this.hooks.notify(mode === 'versus' ? 'Mode: 1 vs 1 duel.' : 'Mode: together vs guards.')
   }
 
   private showRoster(players: { id: string; name: string }[]) {

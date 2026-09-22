@@ -16,7 +16,7 @@ Open the local Vite URL and select **Begin mission**. Controls are in the game m
 
 ## Online co-op
 
-Open the menu → **Online**, pick a mode, **Create room**, then send friends the room code or the invite link (**Copy invite link**). They open the link (or enter the code) and press **Join**.
+Open the menu → **Online**, pick a mode (the room creator can switch it later), **Create room**, then send friends the room code or the invite link (**Copy invite link**). They open the link (or enter the code) and press **Join**.
 
 - Networking is peer-to-peer WebRTC via [PeerJS](https://peerjs.com). The site stays static (it runs on GitHub Pages); the free public PeerJS server is only used so players can find each other. The room creator is the host and relays everything, so keep the host tab open.
 - **Together vs guards** (co-op): teammates appear as green stickmen with their names; you see and hear their shots. A guard killed by anyone dies for everyone. There is no friendly fire.

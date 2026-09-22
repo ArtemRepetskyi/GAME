@@ -20,6 +20,9 @@ export class FirstPersonController {
   onPlayingChange: (playing: boolean) => void = () => {}
   lookSensitivity: () => number = () => 1
   private fallback = false
+  /** The click that recaptures the mouse must not also fire the weapon. */
+  private swallowClick = false
+  private mouseHint: HTMLElement
   private dragging = false
   private started = false
   private walkRotation = new THREE.Quaternion()
@@ -43,6 +46,11 @@ export class FirstPersonController {
     this.world = new CollisionWorld(scene)
     this.body = new PlayerBody(this.world)
     this.actions = new PlayerActions(scene, this.body)
+    this.mouseHint = document.createElement('div')
+    this.mouseHint.id = 'mouse-hint'
+    this.mouseHint.hidden = true
+    this.mouseHint.textContent = 'Click to control the camera with the mouse'
+    this.hud.append(this.mouseHint)
     const options = { signal: this.abort.signal }
     this.camera.onInspect = () => { this.walkRotation.copy(camera.active.quaternion); this.stop() }
     this.startButton.addEventListener('click', () => this.requestControl(), options)
@@ -52,9 +60,10 @@ export class FirstPersonController {
       if (!this.enabled || this.immersive || event.button !== 0) return
       if (!this.playing) this.requestControl()
       // Drag-to-look is only a stopgap: any click on the game asks for mouse capture again.
-      else if (this.fallback && document.pointerLockElement !== canvas) this.lockPointer()
+      else if (this.fallback && document.pointerLockElement !== canvas) { this.swallowClick = true; this.lockPointer() }
       this.dragging = true
-      if (this.fallback) canvas.setPointerCapture(event.pointerId)
+      // The pointer may already be locked by the recapture above; capture only still-free pointers.
+      if (this.fallback && document.pointerLockElement !== canvas) { try { canvas.setPointerCapture(event.pointerId) } catch { /* locked meanwhile */ } }
     }, options)
     window.addEventListener('pointerup', () => { this.dragging = false }, options)
     window.addEventListener('pointercancel', () => { this.dragging = false }, options)
@@ -62,6 +71,7 @@ export class FirstPersonController {
     document.addEventListener('pointerlockchange', () => {
       if (document.pointerLockElement === canvas && this.enabled) { this.fallback = false; this.resume() }
       else if (this.playing && !this.fallback) this.pause()
+      this.updateMouseHint()
     }, options)
     document.addEventListener('pointerlockerror', this.useFallback, options)
     window.addEventListener('keydown', this.keyDown, options)
@@ -121,8 +131,22 @@ export class FirstPersonController {
 
   private useFallback = () => {
     if (!this.enabled || this.immersive) return
+    // Browsers refuse mouse capture from Esc (not a user activation) and for ~1 s after leaving it.
+    // Play on with drag-to-look; the next click on the game captures the mouse.
     this.fallback = true
     this.resume()
+    this.updateMouseHint()
+  }
+
+  /** True once for the click that only recaptured the mouse. */
+  takeSwallowedClick() {
+    const swallowed = this.swallowClick
+    this.swallowClick = false
+    return swallowed
+  }
+
+  private updateMouseHint() {
+    this.mouseHint.hidden = !(this.playing && this.fallback && document.pointerLockElement !== this.canvas && 'requestPointerLock' in this.canvas)
   }
 
   private resume() {
@@ -146,6 +170,8 @@ export class FirstPersonController {
     this.prompt.hidden = true
     this.marker.hidden = true
     this.hud.dataset.playing = 'false'
+    this.mouseHint.hidden = true
+    this.swallowClick = false
     this.panel.hidden = !this.enabled
     this.startButton.textContent = this.missionMode ? (this.started ? 'Resume mission' : 'Begin mission') : this.started ? 'Resume walk' : 'Start walking'
     this.onPlayingChange(false)

@@ -59,3 +59,4 @@ body[data-mode="walk"] .inspection-help { display: none; }
   .walk-card { padding: 24px; }
   .walk-card h1 { font-size: 29px; }
 }
+#mouse-hint { position: absolute; top: calc(50% - 64px); left: 50%; transform: translateX(-50%); padding: 7px 12px; border: 1px solid var(--ink); border-radius: 3px 5px 3px 4px; background: #ffffffef; color: var(--ink); font-size: 13px; pointer-events: none; width: max-content; max-width: calc(100% - 32px); }

@@ -162,6 +162,13 @@ export class NetworkSession {
     this.broadcastRoster()
   }
 
+  /** Host only: switch the room between co-op and duel for everyone. */
+  setMode(mode: GameMode) {
+    if (!this.host || mode === this.mode) return
+    this.mode = mode
+    this.broadcastRoster()
+  }
+
   nameOf(id: string) { return this.names.get(id) ?? 'Player' }
 
   private leaveAll() {
